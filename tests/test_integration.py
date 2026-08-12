@@ -283,13 +283,46 @@ class TestOpsToolsAgainstLiveServer:
         assert payload["count"] >= 0
 
 
-@pytest.mark.skipif(not TEST_TABLE, reason="CLICKSCOPE_TEST_TABLE not set")
+def _pick_profilable_column() -> str | None:
+    """Find a column on TEST_TABLE that can be profiled.
+
+    The test table is whatever the operator points CLICKSCOPE_TEST_TABLE at, so its
+    columns cannot be assumed. Naming one here would make the suite pass on the author's
+    schema and fail on everyone else's.
+    """
+    if not TEST_TABLE:
+        return None
+    import asyncio
+    import json
+
+    from clickscope.server import create_server
+
+    mcp, registry = create_server()
+    try:
+        result = asyncio.run(mcp.call_tool("describe_table", {"table": TEST_TABLE}))
+    finally:
+        registry.close_all()
+    payload = json.loads(result.content[0].text)
+    unorderable = ("Array", "Map", "Tuple", "Nested", "AggregateFunction", "JSON")
+    for column in payload.get("columns", []):
+        bare = column["type"].replace("Nullable(", "").replace("LowCardinality(", "")
+        if not bare.startswith(unorderable):
+            return column["name"]
+    return None
+
+
+PROFILE_COLUMN = _pick_profilable_column()
+
+
+@pytest.mark.skipif(
+    not TEST_TABLE or not PROFILE_COLUMN, reason="no profilable column available"
+)
 class TestProfileColumnAgainstLiveServer:
     _call = staticmethod(TestEveryToolAgainstLiveServer._call)
 
     def test_profiles_a_real_column(self) -> None:
         payload = self._call(
-            "profile_column", {"table": TEST_TABLE, "column": "tenant_id", "top_n": 3}
+            "profile_column", {"table": TEST_TABLE, "column": PROFILE_COLUMN, "top_n": 3}
         )
         assert payload["rows_scanned"] > 0
         assert payload["distinct_approx"] >= 1
@@ -298,12 +331,12 @@ class TestProfileColumnAgainstLiveServer:
         assert all(0 <= v["fraction"] <= 1 for v in payload["top_values"])
 
     def test_reports_what_it_read(self) -> None:
-        payload = self._call("profile_column", {"table": TEST_TABLE, "column": "type"})
+        payload = self._call("profile_column", {"table": TEST_TABLE, "column": PROFILE_COLUMN})
         assert payload["rows_read"] is not None
         assert payload["elapsed_ms"] >= 0
 
     def test_low_cardinality_is_called_out(self) -> None:
-        payload = self._call("profile_column", {"table": TEST_TABLE, "column": "type"})
+        payload = self._call("profile_column", {"table": TEST_TABLE, "column": PROFILE_COLUMN})
         if payload["distinct_approx"] <= 32:
             assert "LowCardinality" in payload.get("assessment", "")
 
