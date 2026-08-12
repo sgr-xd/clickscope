@@ -248,8 +248,11 @@ def register(mcp: MCPServer, registry: ClusterRegistry) -> None:
             SELECT
                 partition,
                 count() AS parts,
-                sum(rows) AS rows,
-                sum(bytes_on_disk) AS bytes_on_disk,
+                -- Aliases must not repeat a source column name: `sum(x) AS x` makes a
+                -- later `sum(x)` resolve to the alias, which ClickHouse rejects as a
+                -- nested aggregate (ILLEGAL_AGGREGATION).
+                sum(rows) AS total_rows,
+                sum(bytes_on_disk) AS total_bytes,
                 formatReadableSize(sum(bytes_on_disk)) AS size,
                 min(min_time) AS min_time,
                 max(max_time) AS max_time

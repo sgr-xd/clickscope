@@ -154,3 +154,81 @@ class TestPolicyAgainstLiveServer:
     )
     def test_dangerous_statements_never_execute(self, handle, sql: str) -> None:
         assert not handle.policy.evaluate(sql).allowed
+
+
+class TestEveryToolAgainstLiveServer:
+    """Call each tool the way a client does, not by running its SQL by hand.
+
+    The earlier integration tests exercised `Connection` directly, so a tool whose
+    generated SQL was invalid still passed everything. `list_partitions` shipped with
+    `sum(x) AS x`, which ClickHouse rejects as a nested aggregate the moment the alias
+    is referenced again — invisible until someone actually called the tool.
+    """
+
+    @staticmethod
+    def _call(name: str, arguments: dict):
+        import asyncio
+        import json
+
+        from clickscope.server import create_server
+
+        mcp, registry = create_server()
+        try:
+            result = asyncio.run(mcp.call_tool(name, arguments))
+        finally:
+            registry.close_all()
+        payload = json.loads(result.content[0].text)
+        assert "error" not in payload, f"{name} returned an error: {payload.get('error')}"
+        return payload
+
+    def test_server_info(self) -> None:
+        assert self._call("server_info", {})["clusters"]
+
+    def test_list_clusters(self) -> None:
+        assert self._call("list_clusters", {})["clusters"]
+
+    def test_list_databases(self) -> None:
+        assert self._call("list_databases", {})["count"] >= 1
+
+    def test_list_tables(self) -> None:
+        assert "tables" in self._call("list_tables", {})
+
+    @pytest.mark.skipif(not TEST_TABLE, reason="CLICKSCOPE_TEST_TABLE not set")
+    def test_describe_table(self) -> None:
+        assert self._call("describe_table", {"table": TEST_TABLE})["column_count"] > 0
+
+    @pytest.mark.skipif(not TEST_TABLE, reason="CLICKSCOPE_TEST_TABLE not set")
+    def test_show_create_table(self) -> None:
+        assert "CREATE" in self._call("show_create_table", {"table": TEST_TABLE})["ddl"]
+
+    @pytest.mark.skipif(not TEST_TABLE, reason="CLICKSCOPE_TEST_TABLE not set")
+    def test_list_partitions(self) -> None:
+        payload = self._call("list_partitions", {"table": TEST_TABLE})
+        assert "partitions" in payload
+        if payload["partitions"]:
+            first = payload["partitions"][0]
+            assert {"parts", "total_rows", "total_bytes", "size"}.issubset(first)
+
+    @pytest.mark.skipif(not TEST_TABLE, reason="CLICKSCOPE_TEST_TABLE not set")
+    def test_sample_rows(self) -> None:
+        assert self._call("sample_rows", {"table": TEST_TABLE, "limit": 3})["row_count"] <= 3
+
+    @pytest.mark.skipif(not TEST_TABLE, reason="CLICKSCOPE_TEST_TABLE not set")
+    def test_validate_query(self) -> None:
+        sql = f"SELECT count() FROM {TEST_TABLE}"
+        assert self._call("validate_query", {"sql": sql})["valid"] is True
+
+    @pytest.mark.skipif(not TEST_TABLE, reason="CLICKSCOPE_TEST_TABLE not set")
+    def test_estimate_query_cost(self) -> None:
+        sql = f"SELECT * FROM {TEST_TABLE}"
+        assert "verdict" in self._call("estimate_query_cost", {"sql": sql})
+
+    @pytest.mark.skipif(not TEST_TABLE, reason="CLICKSCOPE_TEST_TABLE not set")
+    def test_explain_plan(self) -> None:
+        sql = f"SELECT * FROM {TEST_TABLE}"
+        assert "plan" in self._call("explain_plan", {"sql": sql})
+
+    @pytest.mark.skipif(not TEST_TABLE, reason="CLICKSCOPE_TEST_TABLE not set")
+    def test_run_select_query(self) -> None:
+        payload = self._call("run_select_query", {"sql": f"SELECT 1 FROM {TEST_TABLE}"})
+        assert payload["executed_sql"].endswith("LIMIT 100")
