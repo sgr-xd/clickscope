@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "clickscope",
   "displayName": "ClickScope (ClickHouse, read-only)",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Read-only ClickHouse access for any deployment \u2014 self-hosted, clustered or Cloud. Explore schemas, and cost a query with EXPLAIN ESTIMATE before running it so a full scan is caught before it starts. Ships query-craft guidance alongside the MCP server.",
   "author": {
     "name": "sgr-xd"

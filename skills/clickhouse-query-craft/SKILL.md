@@ -1,6 +1,6 @@
 ---
 name: clickhouse-query-craft
-description: Write ClickHouse queries that stay cheap, and check their cost before running them. Use when composing, reviewing or debugging SQL against ClickHouse — including when a query is slow, times out, reads far more data than expected, or when choosing filters, a time range, an ORDER BY key or a partition. Also use when reading EXPLAIN ESTIMATE / EXPLAIN PLAN output, or when deciding whether a query is safe to run against a large table.
+description: Write ClickHouse queries that stay cheap, and check what one will cost before running it. Use when composing, reviewing or debugging a specific SQL statement — choosing filters, a time range, an ORDER BY key or a partition; working out why one query reads far more data than expected; or reading EXPLAIN ESTIMATE / EXPLAIN PLAN output to decide whether a statement is safe to run against a large table. Does NOT cover the health of the server or a table — stuck merges, failing mutations, replication lag, part accumulation, or what is running right now: use clickhouse-cluster-health for those.
 license: Apache-2.0
 metadata:
   version: "1.0.0"
@@ -26,8 +26,9 @@ to prevent.
 4. **`run_select_query`** once the verdict is `selective` — or once you have accepted that a
    scan is genuinely what you need.
 
-Use `validate_query` when you are unsure the SQL is even legal. It runs `EXPLAIN SYNTAX`, so
-it costs nothing — never validate by running a query with `LIMIT 1`.
+Use `validate_query` when you are unsure the SQL is even legal. It builds the query plan,
+so it resolves table and column names as well as syntax, and still reads no data — never
+validate by running a query with `LIMIT 1`.
 
 ## What makes a query cheap
 
@@ -85,8 +86,10 @@ and `fraction_of_table`.
   time bound.
 - A small `fraction_of_table` — the index is working. Run it.
 
-**`explain_plan`** shows why. An `Indexes:` section listing `PrimaryKey` with a granule count
-well below the total means pruning happened. No such section means a full scan.
+**`explain_plan`** shows why, as `granules_selected` against `granules_total` plus a
+stage-by-stage breakdown. Judge it by that ratio, not by whether the plan mentions indexes:
+ClickHouse prints an `Indexes:` section even when it kept 97% of the granules, which is a
+full scan wearing a disguise.
 
 Estimates come from part metadata and are approximate — treat them as an order of magnitude,
 not a promise. After running, compare against the `rows_read` the query actually reported.
