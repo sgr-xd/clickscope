@@ -12,12 +12,45 @@ Works with any ClickHouse: self-hosted, clustered, local, or Cloud.
 
 ## Install
 
+### As a Claude Code plugin (recommended)
+
+```
+/plugin marketplace add sgr-xd/clickscope
+/plugin install clickscope
+```
+
+Claude Code then asks for host, port, user, password, database and TLS. The password is
+masked and goes to your operating system's secure storage — keychain on macOS, the
+credential store on Windows — never to a settings file. Nothing else to configure.
+
+This also installs the `clickhouse-query-craft` skill, which teaches the
+explore → estimate → run discipline the tools are built around.
+
+### As a standalone MCP server
+
 ```bash
-uvx clickscope          # run without installing
-pip install clickscope  # or install it
+claude mcp add clickscope --scope user \
+  -e CLICKHOUSE_HOST=clickhouse.internal \
+  -e CLICKHOUSE_USER=readonly_user \
+  -e CLICKHOUSE_PASSWORD_FILE=$HOME/.config/clickscope/password \
+  -e CLICKHOUSE_DATABASE=my_db \
+  -- uvx --from git+https://github.com/sgr-xd/clickscope clickscope
+```
+
+Works with any MCP client, not only Claude Code — point it at
+`uvx --from git+https://github.com/sgr-xd/clickscope clickscope` over stdio.
+
+### From source
+
+```bash
+git clone https://github.com/sgr-xd/clickscope && cd clickscope
+uv venv && uv pip install -e ".[dev]"
+pytest -m "not integration"      # 134 tests, no database needed
 ```
 
 ## Configure
+
+Only needed for the standalone and from-source paths; the plugin asks instead.
 
 ```bash
 export CLICKHOUSE_HOST=clickhouse.internal
@@ -27,20 +60,9 @@ export CLICKHOUSE_PASSWORD_FILE=~/.config/clickscope/password   # preferred
 export CLICKHOUSE_DATABASE=my_db
 ```
 
-The password is read from `CLICKHOUSE_PASSWORD_FILE` if set, otherwise `CLICKHOUSE_PASSWORD`.
-It is never accepted as a command-line argument — arguments leak through shell history and
-`ps`.
-
-### Claude Code
-
-```bash
-claude mcp add clickscope --scope user \
-  -e CLICKHOUSE_HOST=clickhouse.internal \
-  -e CLICKHOUSE_USER=readonly_user \
-  -e CLICKHOUSE_PASSWORD_FILE=$HOME/.config/clickscope/password \
-  -e CLICKHOUSE_DATABASE=my_db \
-  -- uvx clickscope
-```
+The password is read from `CLICKHOUSE_PASSWORD_FILE` if set, otherwise
+`CLICKHOUSE_PASSWORD`. It is never accepted as a command-line argument — arguments leak
+through shell history and `ps`.
 
 ## Several clusters
 
