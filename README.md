@@ -43,11 +43,17 @@ claude mcp add clickscope --scope user \
   -e CLICKHOUSE_USER=readonly_user \
   -e CLICKHOUSE_PASSWORD_FILE=$HOME/.config/clickscope/password \
   -e CLICKHOUSE_DATABASE=my_db \
-  -- uvx --from git+https://github.com/sgr-xd/clickscope clickscope
+  -- uvx clickscope
 ```
 
-Works with any MCP client, not only Claude Code — point it at
-`uvx --from git+https://github.com/sgr-xd/clickscope clickscope` over stdio.
+Works with any MCP client, not only Claude Code — point it at `uvx clickscope`
+over stdio.
+
+### From PyPI
+
+```bash
+pip install clickscope    # or: uvx clickscope
+```
 
 ### From source
 
