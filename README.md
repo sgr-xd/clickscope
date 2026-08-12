@@ -319,6 +319,61 @@ run_select_query(sql="…", cluster="staging")     → explicitly staging
 The single-cluster environment variables above keep working unchanged; they simply produce
 one cluster named `default`.
 
+## Releasing
+
+**Always bump the version when shipping code.** Not doing so is silent: users keep running
+the old build, and nothing reports an error to reveal it.
+
+Three files carry the version, and they must agree:
+
+```
+.claude-plugin/plugin.json       "version"
+.claude-plugin/marketplace.json  plugins[0].version
+pyproject.toml                   version
+```
+
+Then:
+
+```bash
+claude plugin marketplace update clickscope
+claude plugin uninstall clickscope@clickscope
+claude plugin install clickscope@clickscope --scope user \
+  --config CLICKHOUSE_HOST=... --config CLICKHOUSE_USER=... --config CLICKHOUSE_DATABASE=...
+# re-enter the password via /plugin configure, then restart the client
+```
+
+### Why each step is there
+
+**`marketplace update` alone does nothing to the installed copy.** The plugin cache lives at
+`plugins/cache/<marketplace>/<plugin>/<version>/`. With the version unchanged the installer
+considers the cached copy current, so a successful "update" can leave the old source in place.
+The version *is* the cache key.
+
+**Uninstalling erases the configuration.** `pluginConfigs` is emptied, so the reinstall passes
+the non-sensitive values back with `--config` and only the password needs re-entering. Nothing
+warns you about this beforehand.
+
+**Directory-sourced installs need their build cache cleared too.** When a marketplace points at
+a local directory, `${CLAUDE_PLUGIN_ROOT}` is a path that never changes between versions, so
+`uvx` reuses the environment it built the first time — a fix committed hours earlier can still
+reproduce, and `/reload-plugins` does not help (it starts a new process against the same stale
+environment, and leaves the old one running). To confirm what a running server actually
+imports:
+
+```bash
+ps -eo pid,command | grep clickscope     # note the archive-v0/<hash>/bin/python path
+grep -r "the-fix-you-expect" <that env>/lib/python3.*/site-packages/clickscope/
+```
+
+The fix is `uv cache clean clickscope`, kill the server processes, then reload. Installs from
+GitHub are immune, because their plugin root is version-scoped and a bump forces a rebuild.
+
+### Before publishing
+
+- `pytest` — the full suite, including live tests against a real server
+- Claim the name on PyPI if you intend to use `uvx clickscope` in the docs; an unclaimed name
+  can be taken by anyone once the repository is public
+
 ## License
 
 Apache-2.0
