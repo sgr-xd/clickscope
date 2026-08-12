@@ -1,0 +1,24 @@
+{
+  "name": "clickscope",
+  "description": "Read-only ClickHouse tooling for Claude Code",
+  "owner": {
+    "name": "sgr-xd",
+    "url": "https://github.com/sgr-xd"
+  },
+  "plugins": [
+    {
+      "name": "clickscope",
+      "description": "Read-only ClickHouse access \u2014 explore schemas and cost a query with EXPLAIN ESTIMATE before running it, so a full scan is caught before it starts.",
+      "source": "./",
+      "version": "0.1.0",
+      "category": "database",
+      "tags": [
+        "clickhouse",
+        "sql",
+        "database",
+        "read-only",
+        "analytics"
+      ]
+    }
+  ]
+}

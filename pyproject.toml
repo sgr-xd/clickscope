@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clickscope"
+version = "0.1.0"
+description = "A read-only ClickHouse MCP server that lets an agent explore schema and cost a query before running it."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "sgr-xd" }]
+keywords = ["clickhouse", "mcp", "model-context-protocol", "sql", "read-only"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+]
+
+dependencies = [
+    # Official MCP SDK. Ships FastMCP as mcp.server.fastmcp, so no separate
+    # framework dependency is needed.
+    "mcp>=2.0",
+    # Official ClickHouse Python client.
+    "clickhouse-connect>=0.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.urls]
+Homepage = "https://github.com/sgr-xd/clickscope"
+Issues = "https://github.com/sgr-xd/clickscope/issues"
+
+[project.scripts]
+clickscope = "clickscope.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["clickscope*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: tests that hit a real ClickHouse (read-only). Deselect with -m 'not integration'.",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+# Bugs, not style. F821 (undefined name) is the one that actually catches shipped defects.
+select = ["F", "E9", "B", "T20", "I"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["T20"]
+# These two print to stderr on purpose: stdout is the MCP transport, so a startup
+# failure and an unwritable audit log have nowhere else to go.
+"src/clickscope/__main__.py" = ["T20"]
+"src/clickscope/audit.py" = ["T20"]
