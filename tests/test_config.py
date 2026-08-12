@@ -245,3 +245,93 @@ class TestRegistry:
         registry.get("dev")
         connected = {d["cluster"] for d in registry.describe_all() if d["connected"]}
         assert connected == {"dev"}
+
+
+class TestEmptyEnvironmentValues:
+    """A plugin host passes every declared option through, blank ones included.
+
+    Treating "" as a provided value connects as user "" and fails authentication with
+    an error that points nowhere near the actual cause.
+    """
+
+    def test_blank_user_and_database_fall_back_to_defaults(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CLICKHOUSE_HOST", "ch.example")
+        for name in ("CLICKHOUSE_USER", "CLICKHOUSE_DATABASE", "CLICKHOUSE_PORT"):
+            monkeypatch.setenv(name, "")
+        cluster = AppConfig.from_env().clusters["default"]
+        assert cluster.username == "default"
+        assert cluster.database == "default"
+        assert cluster.port == 8123
+
+    def test_whitespace_only_is_also_treated_as_absent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CLICKHOUSE_HOST", "ch.example")
+        monkeypatch.setenv("CLICKHOUSE_USER", "   ")
+        assert AppConfig.from_env().clusters["default"].username == "default"
+
+    def test_blank_host_still_errors(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CLICKHOUSE_HOST", "")
+        with pytest.raises(ConfigError):
+            AppConfig.from_env()
+
+
+class TestServerAddressParsing:
+    """Host, port and TLS come from one field.
+
+    Three questions in a setup dialog become one, and the forms people already
+    copy around — host:port, or a URL — work without translation.
+    """
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("clickhouse.internal", ("clickhouse.internal", None, None)),
+            ("clickhouse.internal:9000", ("clickhouse.internal", 9000, None)),
+            ("10.0.0.1:8123", ("10.0.0.1", 8123, None)),
+            ("https://abc.clickhouse.cloud:8443", ("abc.clickhouse.cloud", 8443, True)),
+            ("https://abc.clickhouse.cloud", ("abc.clickhouse.cloud", None, True)),
+            ("http://localhost:8123", ("localhost", 8123, False)),
+            ("  spaced.example  ", ("spaced.example", None, None)),
+            ("", ("", None, None)),
+        ],
+    )
+    def test_forms(self, value: str, expected: tuple) -> None:
+        from clickscope.config import parse_server
+
+        assert parse_server(value) == expected
+
+    def test_non_numeric_port_is_rejected(self) -> None:
+        from clickscope.config import parse_server
+
+        with pytest.raises(ConfigError, match="non-numeric port"):
+            parse_server("host:notaport")
+
+    def test_url_without_hostname_is_rejected(self) -> None:
+        from clickscope.config import parse_server
+
+        with pytest.raises(ConfigError, match="cannot read a hostname"):
+            parse_server("https://")
+
+    def test_host_port_reaches_the_cluster_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CLICKHOUSE_HOST", "ch.example:9440")
+        cluster = AppConfig.from_env().clusters["default"]
+        assert (cluster.host, cluster.port) == ("ch.example", 9440)
+
+    def test_https_url_turns_on_tls_and_its_default_port(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CLICKHOUSE_HOST", "https://abc.clickhouse.cloud")
+        cluster = AppConfig.from_env().clusters["default"]
+        assert cluster.secure is True
+        assert cluster.port == 8443
+
+    def test_explicit_port_still_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The individual variables remain available for anyone already using them.
+        monkeypatch.setenv("CLICKHOUSE_HOST", "ch.example:9440")
+        monkeypatch.setenv("CLICKHOUSE_PORT", "8123")
+        assert AppConfig.from_env().clusters["default"].port == 8123

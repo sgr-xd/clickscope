@@ -19,6 +19,8 @@ Works with any ClickHouse: self-hosted, clustered, local, or Cloud.
 /plugin install clickscope
 ```
 
+While the repository is private, use a local checkout instead — `/plugin marketplace add /path/to/clickscope` — or the standalone route below.
+
 Claude Code then asks for host, port, user, password, database and TLS. The password is
 masked and goes to your operating system's secure storage — keychain on macOS, the
 credential store on Windows — never to a settings file. Nothing else to configure.
@@ -53,16 +55,169 @@ pytest -m "not integration"      # 134 tests, no database needed
 Only needed for the standalone and from-source paths; the plugin asks instead.
 
 ```bash
-export CLICKHOUSE_HOST=clickhouse.internal
-export CLICKHOUSE_PORT=8123
+export CLICKHOUSE_HOST=clickhouse.internal          # or host:port, or a full URL
 export CLICKHOUSE_USER=readonly_user
 export CLICKHOUSE_PASSWORD_FILE=~/.config/clickscope/password   # preferred
 export CLICKHOUSE_DATABASE=my_db
 ```
 
+`CLICKHOUSE_HOST` accepts three forms, so port and TLS usually need no separate setting:
+
+| You enter | Host | Port | HTTPS |
+|---|---|---|---|
+| `clickhouse.internal` | clickhouse.internal | 8123 | no |
+| `clickhouse.internal:9440` | clickhouse.internal | 9440 | no |
+| `https://abc.clickhouse.cloud:8443` | abc.clickhouse.cloud | 8443 | yes |
+| `https://abc.clickhouse.cloud` | abc.clickhouse.cloud | 8443 | yes |
+
+`CLICKHOUSE_PORT` and `CLICKHOUSE_SECURE` still work and take precedence if you set them.
+
 The password is read from `CLICKHOUSE_PASSWORD_FILE` if set, otherwise
 `CLICKHOUSE_PASSWORD`. It is never accepted as a command-line argument — arguments leak
 through shell history and `ps`.
+
+Optional, environment only (not offered in the plugin dialog, to keep it to four fields):
+
+| Variable | Purpose |
+|---|---|
+| `CLICKSCOPE_PROFILES` | Path to a multi-cluster profiles file — see below |
+| `CLICKSCOPE_AUDIT_LOG` | Path to a JSONL record of every query decision |
+
+## Using it
+
+Ask in plain language — the tools are named in the responses, not in your question.
+
+**Learn the shape of a table first.**
+
+> *What are the biggest tables in my database?*
+
+`list_tables` returns each table with its `sorting_key` and `partition_key`. Those two
+fields decide everything about cost: a filter matching the leading sorting-key column, or
+pinning a partition, is the difference between reading a few granules and reading the lot.
+
+**Then cost the query before running it.**
+
+> *How many events belong to tenant acme-corp since August 1st?*
+
+`estimate_query_cost` reports what the query *would* read, without reading it:
+
+```
+verdict=selective   parts=4   rows=4,445 of 43,374   (10.2% of table)
+```
+
+Then it runs. Compare that with a filter that misses the key:
+
+```
+verdict=full_scan   parts=13  rows=43,373 of 43,374  (100.0% of table)
+   → Add a filter on the partition key or the leading sorting-key column.
+```
+
+Same table, same row count returned — 10× the work. The verdict arrives *before* the query
+runs, which is the entire point: an agent can correct itself instead of discovering the cost
+afterwards.
+
+**When something is expensive, ask why.**
+
+> *Why is that query slow?*
+
+`explain_plan` measures how much the indexes actually pruned, stage by stage:
+
+```
+uses_index=False   granules 110/113 (97.3%) — effectively a full scan
+    MinMax      parts 17/17   granules 113/113
+    Partition   parts 17/17   granules 113/113
+    PrimaryKey  parts 14/17   granules 110/113
+```
+
+Note `uses_index` comes from the ratio, not from the presence of an `Indexes:` section —
+ClickHouse emits that section even when the index removed nothing.
+
+**Writes simply are not available.**
+
+> *Drop the events table*
+
+```
+Query rejected by ClickScope policy:
+  - query must begin with one of SELECT, WITH, SHOW, DESC, DESCRIBE, EXPLAIN; got DROP
+  - forbidden keyword: DROP
+```
+
+Rejected before any network call.
+
+**What comes back.** Every response names the cluster that answered and the SQL actually
+executed, so a rewritten `LIMIT` is visible rather than silent:
+
+```json
+{"cluster": "prod",
+ "executed_sql": "SELECT tenant_id FROM events WHERE tenant_id = 'acme-corp' LIMIT 100",
+ "row_count": 100, "rows_read": 9845, "elapsed_ms": 62,
+ "policy_notes": ["no LIMIT present; appended LIMIT 100",
+                  "result reached the limit of 100; there may be more rows"]}
+```
+
+## Tools
+
+**Discovery** — schema exploration, no user SQL accepted:
+
+| Tool | Purpose |
+|---|---|
+| `list_clusters` | Configured clusters, which is default, and each one's limits |
+| `list_databases` | Databases visible to your user |
+| `list_tables` | Tables with engine, row count, size, sorting key, partition key |
+| `describe_table` | Columns, types, codecs, TTL, per-column compression |
+| `show_create_table` | Full `CREATE TABLE` DDL |
+| `list_partitions` | Parts, rows and bytes per partition |
+
+**Query**:
+
+| Tool | Purpose |
+|---|---|
+| `run_select_query` | Execute a `SELECT` under enforced caps |
+| `sample_rows` | Preview rows from a table (SQL built server-side) |
+
+**Cost & validation** — these read no data:
+
+| Tool | Purpose |
+|---|---|
+| `validate_query` | `EXPLAIN SYNTAX` — is the SQL legal? |
+| `estimate_query_cost` | `EXPLAIN ESTIMATE` — parts / rows / marks it would read, as a share of the table |
+| `explain_plan` | `EXPLAIN PLAN indexes=1` — how much the indexes actually pruned |
+
+## Safety
+
+ClickScope is read-only, enforced in three independent layers:
+
+1. **Statement policy** — single statement only; must open with `SELECT`, `WITH…SELECT`,
+   `SHOW`, `DESCRIBE` or `EXPLAIN`; DDL/DML keywords, `INTO OUTFILE` and inline `SETTINGS`
+   overrides are rejected. A missing `LIMIT` is appended; an oversized one is clamped.
+2. **Server-enforced caps** — every query runs with `readonly=1` plus `max_execution_time`,
+   `max_result_rows`, `max_rows_to_read`, `max_bytes_to_read`, `max_memory_usage` and
+   `max_threads`. These bind inside ClickHouse, so they hold even if layer 1 is bypassed.
+3. **Database grants** — connect as a user with only `SELECT`. This is the layer that cannot
+   be argued with, and the one you should not skip:
+
+```sql
+CREATE USER readonly_user IDENTIFIED BY '…' SETTINGS readonly = 1;
+GRANT SELECT ON my_db.* TO readonly_user;
+```
+
+The policy layer **rejects, it does not rewrite** — the sole exception being `LIMIT`
+injection. Query rewriting that tries to be clever about filters is deployment-specific and
+fails in ways that are hard to predict, so ClickScope does not do it.
+
+### Tuning the caps
+
+| Variable | Default |
+|---|---|
+| `CLICKSCOPE_MAX_EXECUTION_TIME` | `30` (seconds) |
+| `CLICKSCOPE_MAX_RESULT_ROWS` | `10000` |
+| `CLICKSCOPE_MAX_ROWS_TO_READ` | `100000000` |
+| `CLICKSCOPE_MAX_BYTES_TO_READ` | `10000000000` (10 GB) |
+| `CLICKSCOPE_MAX_MEMORY_USAGE` | `4000000000` (4 GB) |
+| `CLICKSCOPE_MAX_THREADS` | `4` |
+| `CLICKSCOPE_DEFAULT_LIMIT` | `100` |
+| `CLICKSCOPE_MAX_LIMIT` | `10000` |
+| `CLICKSCOPE_AUDIT_LOG` | unset — set a path to record every decision as JSONL |
 
 ## Several clusters
 
@@ -155,93 +310,6 @@ run_select_query(sql="…", cluster="staging")     → explicitly staging
 
 The single-cluster environment variables above keep working unchanged; they simply produce
 one cluster named `default`.
-
-## Tools
-
-**Discovery** — schema exploration, no user SQL accepted:
-
-| Tool | Purpose |
-|---|---|
-| `list_clusters` | Configured clusters, which is default, and each one's limits |
-| `list_databases` | Databases visible to your user |
-| `list_tables` | Tables with engine, row count, size, sorting key, partition key |
-| `describe_table` | Columns, types, codecs, TTL, per-column compression |
-| `show_create_table` | Full `CREATE TABLE` DDL |
-| `list_partitions` | Parts, rows and bytes per partition |
-
-**Query**:
-
-| Tool | Purpose |
-|---|---|
-| `run_select_query` | Execute a `SELECT` under enforced caps |
-| `sample_rows` | Preview rows from a table (SQL built server-side) |
-
-**Cost & validation** — these read no data:
-
-| Tool | Purpose |
-|---|---|
-| `validate_query` | `EXPLAIN SYNTAX` — is the SQL legal? |
-| `estimate_query_cost` | `EXPLAIN ESTIMATE` — parts / rows / marks it would read, as a share of the table |
-| `explain_plan` | `EXPLAIN PLAN indexes=1` — how much the indexes actually pruned |
-
-### Why this matters
-
-Same table, two filters. The first one reads everything:
-
-```
-no key filter    verdict=full_scan   parts=13  rows=43,373  (100.0% of table)
-                 → Add a filter on the partition key or the leading sorting-key column.
-key + partition  verdict=selective   parts=4   rows=4,445   (10.2% of table)
-```
-
-`explain_plan` shows why, stage by stage:
-
-```
-no key filter    uses_index=False   granules 110/113 (97.3%) — effectively a full scan
-key + partition  uses_index=True    granules  11/113 (9.7%)
-    MinMax      parts 8/17   granules 35/113
-    Partition   parts 8/8    granules 35/35
-    PrimaryKey  parts 7/8    granules 11/35
-```
-
-Note that `uses_index` is derived from the ratio, not from the mere presence of an `Indexes:`
-section — ClickHouse emits that section even when the index keeps 97% of the granules.
-
-## Safety
-
-ClickScope is read-only, enforced in three independent layers:
-
-1. **Statement policy** — single statement only; must open with `SELECT`, `WITH…SELECT`,
-   `SHOW`, `DESCRIBE` or `EXPLAIN`; DDL/DML keywords, `INTO OUTFILE` and inline `SETTINGS`
-   overrides are rejected. A missing `LIMIT` is appended; an oversized one is clamped.
-2. **Server-enforced caps** — every query runs with `readonly=1` plus `max_execution_time`,
-   `max_result_rows`, `max_rows_to_read`, `max_bytes_to_read`, `max_memory_usage` and
-   `max_threads`. These bind inside ClickHouse, so they hold even if layer 1 is bypassed.
-3. **Database grants** — connect as a user with only `SELECT`. This is the layer that cannot
-   be argued with, and the one you should not skip:
-
-```sql
-CREATE USER readonly_user IDENTIFIED BY '…' SETTINGS readonly = 1;
-GRANT SELECT ON my_db.* TO readonly_user;
-```
-
-The policy layer **rejects, it does not rewrite** — the sole exception being `LIMIT`
-injection. Query rewriting that tries to be clever about filters is deployment-specific and
-fails in ways that are hard to predict, so ClickScope does not do it.
-
-### Tuning the caps
-
-| Variable | Default |
-|---|---|
-| `CLICKSCOPE_MAX_EXECUTION_TIME` | `30` (seconds) |
-| `CLICKSCOPE_MAX_RESULT_ROWS` | `10000` |
-| `CLICKSCOPE_MAX_ROWS_TO_READ` | `100000000` |
-| `CLICKSCOPE_MAX_BYTES_TO_READ` | `10000000000` (10 GB) |
-| `CLICKSCOPE_MAX_MEMORY_USAGE` | `4000000000` (4 GB) |
-| `CLICKSCOPE_MAX_THREADS` | `4` |
-| `CLICKSCOPE_DEFAULT_LIMIT` | `100` |
-| `CLICKSCOPE_MAX_LIMIT` | `10000` |
-| `CLICKSCOPE_AUDIT_LOG` | unset — set a path to record every decision as JSONL |
 
 ## License
 

@@ -18,6 +18,7 @@ import stat
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 from .secrets import SecretError, has_reference
 from .secrets import resolve as resolve_reference
@@ -25,6 +26,59 @@ from .secrets import resolve as resolve_reference
 
 class ConfigError(RuntimeError):
     """Raised when the environment does not describe a usable connection."""
+
+
+def parse_server(value: str) -> tuple[str, int | None, bool | None]:
+    """Split a server address into host, port and TLS flag.
+
+    One field instead of three. People copy connection details around as
+    `host:port` or as a URL, so accepting those forms removes two questions from
+    the setup dialog and two chances to get it wrong:
+
+        clickhouse.internal                  -> host only
+        clickhouse.internal:9000             -> host + port
+        https://abc.clickhouse.cloud:8443    -> host + port + TLS
+        http://localhost:8123                -> host + port, TLS off
+
+    Returns None for port or TLS where the input did not say, so an explicit
+    setting can still take precedence.
+    """
+    text = (value or "").strip()
+    if not text:
+        return "", None, None
+
+    if "://" in text:
+        parts = urlsplit(text)
+        if not parts.hostname:
+            raise ConfigError(f"cannot read a hostname from {value!r}")
+        secure = parts.scheme in ("https", "clickhouses")
+        try:
+            port = parts.port
+        except ValueError:
+            raise ConfigError(f"{value!r} has an invalid port") from None
+        return parts.hostname, port, secure
+
+    # Bare host, optionally with a port. Bracketed IPv6 goes through urlsplit
+    # above; a bare IPv6 literal has too many colons to disambiguate here.
+    if text.count(":") == 1:
+        host, _, port_text = text.partition(":")
+        try:
+            return host.strip(), int(port_text), None
+        except ValueError:
+            raise ConfigError(f"{value!r} has a non-numeric port") from None
+
+    return text, None, None
+
+
+def _env_str(name: str, default: str) -> str:
+    """An environment variable, treating empty as absent.
+
+    A plugin host passes every declared setting through, so an option the user left
+    blank arrives as "" rather than being missing. Taking that literally would connect
+    as user "" and fail authentication with an error that points nowhere useful.
+    """
+    value = os.environ.get(name, "").strip()
+    return value or default
 
 
 def _env_int(name: str, default: int) -> int:
@@ -176,14 +230,21 @@ class AppConfig:
                 "or point CLICKSCOPE_PROFILES at a JSON profiles file."
             )
 
-        secure = _env_bool("CLICKHOUSE_SECURE", False)
+        host, parsed_port, parsed_secure = parse_server(host)
+        if not host:
+            raise ConfigError("CLICKHOUSE_HOST does not contain a hostname")
+
+        # Explicit settings win; otherwise fall back to whatever the address implied,
+        # and only then to the protocol defaults.
+        secure = _env_bool("CLICKHOUSE_SECURE", parsed_secure if parsed_secure is not None else False)
+        default_port = parsed_port if parsed_port is not None else (8443 if secure else 8123)
         cluster = ClusterConfig(
             name="default",
             host=host,
-            port=_env_int("CLICKHOUSE_PORT", 8443 if secure else 8123),
-            username=os.environ.get("CLICKHOUSE_USER", "default").strip(),
+            port=_env_int("CLICKHOUSE_PORT", default_port),
+            username=_env_str("CLICKHOUSE_USER", "default"),
             password=_password_from_env(),
-            database=os.environ.get("CLICKHOUSE_DATABASE", "default").strip(),
+            database=_env_str("CLICKHOUSE_DATABASE", "default"),
             secure=secure,
             verify=_env_bool("CLICKHOUSE_VERIFY", True),
             connect_timeout=_env_int("CLICKHOUSE_CONNECT_TIMEOUT", 10),
