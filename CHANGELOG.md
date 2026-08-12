@@ -7,6 +7,20 @@ documentation and skills — the plugin cache is keyed by version, so an unchang
 version means installed copies silently keep the previous build. See *Releasing* in the
 README.
 
+## [0.2.0]
+
+### Added
+
+- Five operational tools: `list_running_queries`, `search_query_log`,
+  `table_storage_stats`, `background_operations` and `replication_status`. The
+  cluster-health skill previously had the model compose these statements itself, and they
+  are easy to get subtly wrong — omitting `type != 'QueryStart'` from a query_log search
+  doubles every count with nothing to reveal it.
+- `profile_column`: nulls, approximate distinct count, range and most common values for a
+  single column, with the row count it scanned. Answers what a schema cannot — that a
+  String column holds twelve distinct values, not four thousand. Flags a LowCardinality
+  candidate, and warns when a column is too distinct to group by.
+
 ## [0.1.4]
 
 ### Fixed

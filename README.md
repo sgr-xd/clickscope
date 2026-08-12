@@ -183,6 +183,7 @@ executed, so a rewritten `LIMIT` is visible rather than silent:
 | `describe_table` | Columns, types, codecs, TTL, per-column compression |
 | `show_create_table` | Full `CREATE TABLE` DDL |
 | `list_partitions` | Parts, rows and bytes per partition |
+| `profile_column` | One column's nulls, distinct count, range and most common values |
 
 **Query**:
 
@@ -190,6 +191,16 @@ executed, so a rewritten `LIMIT` is visible rather than silent:
 |---|---|
 | `run_select_query` | Execute a `SELECT` under enforced caps |
 | `sample_rows` | Preview rows from a table (SQL built server-side) |
+
+**Operations** — what the server is doing, and whether its background work is keeping up:
+
+| Tool | Purpose |
+|---|---|
+| `list_running_queries` | Queries executing now, longest first |
+| `search_query_log` | Slowest completed queries, or failures grouped by exception |
+| `table_storage_stats` | Tables ranked by part count and size — where storage pressure is |
+| `background_operations` | Merges in flight, and mutations that are stuck retrying |
+| `replication_status` | Read-only replicas, lag and queue backlog |
 
 **Cost & validation** — these read no data:
 

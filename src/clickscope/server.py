@@ -57,11 +57,13 @@ def create_server(config: AppConfig | None = None) -> tuple[MCPServer, ClusterRe
             "audit_log_enabled": audit.enabled,
         }
 
-    from .tools import cost, discovery, query
+    from .tools import cost, discovery, ops, profile, query
 
     discovery.register(mcp, registry)
     query.register(mcp, registry, audit)
     cost.register(mcp, registry, audit)
+    ops.register(mcp, registry)
+    profile.register(mcp, registry)
 
     return mcp, registry
 

@@ -232,3 +232,96 @@ class TestEveryToolAgainstLiveServer:
     def test_run_select_query(self) -> None:
         payload = self._call("run_select_query", {"sql": f"SELECT 1 FROM {TEST_TABLE}"})
         assert payload["executed_sql"].endswith("LIMIT 100")
+
+
+class TestOpsToolsAgainstLiveServer:
+    """Operational tools, called the way a client calls them.
+
+    Written as live tests because their SQL is the part that breaks: every defect these
+    tools could have — a nested aggregate, a column that does not exist on this server
+    version — is invisible until the statement reaches ClickHouse.
+    """
+
+    _call = staticmethod(TestEveryToolAgainstLiveServer._call)
+
+    def test_list_running_queries(self) -> None:
+        # At minimum this query sees itself.
+        assert "running" in self._call("list_running_queries", {})
+
+    def test_search_query_log_slowest(self) -> None:
+        payload = self._call("search_query_log", {"hours": 24, "limit": 5})
+        assert payload["grouped_by_exception"] is False
+        assert "entries" in payload
+
+    def test_search_query_log_failures_are_grouped(self) -> None:
+        payload = self._call("search_query_log", {"hours": 24, "failed_only": True})
+        assert payload["grouped_by_exception"] is True
+
+    def test_search_query_log_clamps_absurd_input(self) -> None:
+        payload = self._call("search_query_log", {"hours": 99999, "limit": 99999})
+        assert payload["hours"] <= 24 * 30
+        assert payload["count"] <= 200
+
+    def test_table_storage_stats(self) -> None:
+        payload = self._call("table_storage_stats", {"limit": 5})
+        assert payload["count"] <= 5
+        if payload["tables"]:
+            assert {"parts", "total_rows", "size"}.issubset(payload["tables"][0])
+
+    def test_background_operations(self) -> None:
+        payload = self._call("background_operations", {})
+        assert "merges_in_flight" in payload
+        assert "stuck_mutations" in payload
+        assert payload["assessment"]
+
+    def test_replication_status_healthy_is_empty(self) -> None:
+        payload = self._call("replication_status", {})
+        assert "replicas" in payload and payload["assessment"]
+
+    def test_replication_status_can_list_everything(self) -> None:
+        payload = self._call("replication_status", {"unhealthy_only": False})
+        assert payload["count"] >= 0
+
+
+@pytest.mark.skipif(not TEST_TABLE, reason="CLICKSCOPE_TEST_TABLE not set")
+class TestProfileColumnAgainstLiveServer:
+    _call = staticmethod(TestEveryToolAgainstLiveServer._call)
+
+    def test_profiles_a_real_column(self) -> None:
+        payload = self._call(
+            "profile_column", {"table": TEST_TABLE, "column": "tenant_id", "top_n": 3}
+        )
+        assert payload["rows_scanned"] > 0
+        assert payload["distinct_approx"] >= 1
+        assert len(payload["top_values"]) <= 3
+        # Fractions must be a share of the scan, not of the returned sample.
+        assert all(0 <= v["fraction"] <= 1 for v in payload["top_values"])
+
+    def test_reports_what_it_read(self) -> None:
+        payload = self._call("profile_column", {"table": TEST_TABLE, "column": "type"})
+        assert payload["rows_read"] is not None
+        assert payload["elapsed_ms"] >= 0
+
+    def test_low_cardinality_is_called_out(self) -> None:
+        payload = self._call("profile_column", {"table": TEST_TABLE, "column": "type"})
+        if payload["distinct_approx"] <= 32:
+            assert "LowCardinality" in payload.get("assessment", "")
+
+    def test_unknown_column_is_refused_before_scanning(self) -> None:
+        import asyncio
+        import json
+
+        from clickscope.server import create_server
+
+        mcp, registry = create_server()
+        try:
+            result = asyncio.run(
+                mcp.call_tool(
+                    "profile_column", {"table": TEST_TABLE, "column": "no_such_column_xyz"}
+                )
+            )
+        finally:
+            registry.close_all()
+        payload = json.loads(result.content[0].text)
+        assert "not found" in payload["error"]
+        assert "describe_table" in payload["hint"]
