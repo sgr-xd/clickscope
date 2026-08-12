@@ -335,3 +335,46 @@ class TestServerAddressParsing:
         monkeypatch.setenv("CLICKHOUSE_HOST", "ch.example:9440")
         monkeypatch.setenv("CLICKHOUSE_PORT", "8123")
         assert AppConfig.from_env().clusters["default"].port == 8123
+
+
+class TestCommandLine:
+    """`--version` must work on a broken install — that is when you need it.
+
+    The stale-build problem this project hit is diagnosed by asking a running server
+    which version it is. That answer has to arrive before any configuration is read,
+    or a misconfigured install cannot be identified at all.
+    """
+
+    def test_version_needs_no_configuration(
+        self, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        from clickscope.__main__ import main
+
+        # No CLICKHOUSE_HOST: the clean_env fixture has removed it.
+        assert main(["--version"]) == 0
+        assert capsys.readouterr().out.startswith("clickscope ")
+
+    def test_help_needs_no_configuration(self, capsys) -> None:
+        from clickscope.__main__ import main
+
+        assert main(["--help"]) == 0
+        assert "read-only ClickHouse MCP server" in capsys.readouterr().out
+
+    def test_unrecognised_argument_fails_loudly(self, capsys) -> None:
+        from clickscope.__main__ import main
+
+        assert main(["--nope"]) == 2
+        assert "unrecognised argument" in capsys.readouterr().err
+
+    def test_missing_configuration_still_reports_clearly(self, capsys) -> None:
+        from clickscope.__main__ import main
+
+        assert main([]) == 2
+        assert "configuration error" in capsys.readouterr().err
+
+    def test_version_matches_the_packaged_metadata(self) -> None:
+        from importlib.metadata import version as distribution_version
+
+        from clickscope.server import version
+
+        assert version() == distribution_version("clickscope")

@@ -7,7 +7,8 @@
         "CLICKHOUSE_HOST": "${user_config.CLICKHOUSE_HOST}",
         "CLICKHOUSE_USER": "${user_config.CLICKHOUSE_USER}",
         "CLICKHOUSE_PASSWORD": "${user_config.CLICKHOUSE_PASSWORD}",
-        "CLICKHOUSE_DATABASE": "${user_config.CLICKHOUSE_DATABASE}"
+        "CLICKHOUSE_DATABASE": "${user_config.CLICKHOUSE_DATABASE}",
+        "CLICKSCOPE_PROFILES": "${user_config.CLICKSCOPE_PROFILES}"
       }
     }
   }

@@ -51,7 +51,7 @@ def create_server(config: AppConfig | None = None) -> tuple[MCPServer, ClusterRe
         without touching any data.
         """
         return {
-            "clickscope_version": _version(),
+            "clickscope_version": version(),
             "default_cluster": registry.default_name,
             "clusters": registry.describe_all(),
             "audit_log_enabled": audit.enabled,
@@ -66,10 +66,17 @@ def create_server(config: AppConfig | None = None) -> tuple[MCPServer, ClusterRe
     return mcp, registry
 
 
-def _version() -> str:
-    try:
-        from importlib.metadata import version
+def version() -> str:
+    """The installed distribution's version.
 
-        return version("clickscope")
-    except Exception:  # noqa: BLE001 - version is cosmetic
+    Read from package metadata rather than hardcoded, so there is one source of truth.
+    Note that an editable development install records its version at install time and
+    does not track later edits to pyproject.toml — re-run `uv pip install -e .` if this
+    disagrees with the file.
+    """
+    try:
+        from importlib.metadata import version as distribution_version
+
+        return distribution_version("clickscope")
+    except Exception:  # noqa: BLE001 - a missing version must not stop the server
         return "unknown"

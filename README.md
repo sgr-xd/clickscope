@@ -329,7 +329,9 @@ one cluster named `default`.
 
 ## Releasing
 
-**Always bump the version when shipping code.** Not doing so is silent: users keep running
+Changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+
+**Always bump the version when shipping code**, documentation and skills included. Not doing so is silent: users keep running
 the old build, and nothing reports an error to reveal it.
 
 Three files carry the version, and they must agree:
@@ -379,6 +381,8 @@ GitHub are immune, because their plugin root is version-scoped and a bump forces
 ### Before publishing
 
 - `pytest` — the full suite, including live tests against a real server
+- `clickscope --version` — confirms which build a given install is actually running,
+  which is the quickest way to catch a stale plugin cache
 - Claim the name on PyPI if you intend to use `uvx clickscope` in the docs; an unclaimed name
   can be taken by anyone once the repository is public
 

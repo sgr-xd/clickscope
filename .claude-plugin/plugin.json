@@ -2,8 +2,8 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "clickscope",
   "displayName": "ClickScope (ClickHouse, read-only)",
-  "version": "0.1.2",
-  "description": "Read-only ClickHouse access for any deployment \u2014 self-hosted, clustered or Cloud. Explore schemas, and cost a query with EXPLAIN ESTIMATE before running it so a full scan is caught before it starts. Ships query-craft guidance alongside the MCP server.",
+  "version": "0.1.3",
+  "description": "Read-only ClickHouse access for any deployment — self-hosted, clustered or Cloud. Explore schemas, and cost a query with EXPLAIN ESTIMATE before running it so a full scan is caught before it starts. Ships query-craft guidance alongside the MCP server.",
   "author": {
     "name": "sgr-xd"
   },
@@ -24,28 +24,30 @@
     "CLICKHOUSE_HOST": {
       "type": "string",
       "title": "Server",
-      "description": "clickhouse.internal, host:port, or a full URL like https://abc.clickhouse.cloud:8443. Port and HTTPS are taken from what you enter.",
-      "required": true
+      "description": "clickhouse.internal, host:port, or a full URL like https://abc.clickhouse.cloud:8443. Port and HTTPS are taken from what you enter. Leave empty if you use a profiles file instead."
     },
     "CLICKHOUSE_USER": {
       "type": "string",
       "title": "Username",
-      "description": "Use an account granted only SELECT \u2014 the database is the layer that can actually enforce read-only.",
-      "default": "default",
-      "required": true
+      "description": "Use an account granted only SELECT — the database is the layer that can actually enforce read-only.",
+      "default": "default"
     },
     "CLICKHOUSE_PASSWORD": {
       "type": "string",
       "title": "Password",
-      "description": "Stored in your system keychain, never in a settings file. Leave empty for a server with no password.",
+      "description": "Stored in your system keychain, never in a settings file. Note that upgrading the plugin erases it — a profiles file avoids that.",
       "sensitive": true
     },
     "CLICKHOUSE_DATABASE": {
       "type": "string",
       "title": "Database",
       "description": "Used when a tool call does not name one.",
-      "default": "default",
-      "required": true
+      "default": "default"
+    },
+    "CLICKSCOPE_PROFILES": {
+      "type": "file",
+      "title": "Profiles file (several clusters, or credentials that survive upgrades)",
+      "description": "Path to a JSON file describing one or more clusters. Takes precedence over the fields above. Because it holds ${env:...}, ${file:...} or ${cmd:...} references rather than values, the credentials live outside plugin config — so upgrading, which erases everything else here, cannot touch them."
     }
   }
 }
