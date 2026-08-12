@@ -342,14 +342,22 @@ Three files carry the version, and they must agree:
 pyproject.toml                   version
 ```
 
-Then:
+Then update an installed copy from `/plugin` in Claude Code:
+
+```
+/plugin  →  ClickScope  →  Update now
+```
+
+That preserves configuration, including the keychain-held password. There is no CLI
+equivalent — `claude plugin` has no `update` subcommand, and `install` over an existing
+plugin is a no-op. For a scripted environment the only option is uninstall and reinstall,
+which **erases configuration**, so pass the non-sensitive values back:
 
 ```bash
-claude plugin marketplace update clickscope
 claude plugin uninstall clickscope@clickscope
 claude plugin install clickscope@clickscope --scope user \
   --config CLICKHOUSE_HOST=... --config CLICKHOUSE_USER=... --config CLICKHOUSE_DATABASE=...
-# re-enter the password via /plugin configure, then restart the client
+# then re-enter the password via /plugin configure
 ```
 
 ### Why each step is there
@@ -359,9 +367,9 @@ claude plugin install clickscope@clickscope --scope user \
 considers the cached copy current, so a successful "update" can leave the old source in place.
 The version *is* the cache key.
 
-**Uninstalling erases the configuration.** `pluginConfigs` is emptied, so the reinstall passes
-the non-sensitive values back with `--config` and only the password needs re-entering. Nothing
-warns you about this beforehand.
+**Uninstalling erases the configuration**, which is why *Update now* is the path to prefer.
+Uninstall empties `pluginConfigs` and takes the keychain entry with it, with no warning. An
+update keeps both.
 
 **Directory-sourced installs need their build cache cleared too.** When a marketplace points at
 a local directory, `${CLAUDE_PLUGIN_ROOT}` is a path that never changes between versions, so

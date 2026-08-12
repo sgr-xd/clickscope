@@ -10,7 +10,7 @@
       "name": "clickscope",
       "description": "Read-only ClickHouse access \u2014 explore schemas and cost a query with EXPLAIN ESTIMATE before running it, so a full scan is caught before it starts.",
       "source": "./",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "category": "database",
       "tags": [
         "clickhouse",

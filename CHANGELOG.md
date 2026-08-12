@@ -7,6 +7,15 @@ documentation and skills — the plugin cache is keyed by version, so an unchang
 version means installed copies silently keep the previous build. See *Releasing* in the
 README.
 
+## [0.1.4]
+
+### Fixed
+
+- Documentation claimed that upgrading erases the stored password and that a profiles file
+  was the way to avoid it. Both were wrong: *Update now* in `/plugin` preserves all
+  configuration, keychain entry included. The claim came from testing only the CLI, which
+  has no update subcommand, and generalising from it.
+
 ## [0.1.3]
 
 ### Added
@@ -14,10 +23,8 @@ README.
 - `clickscope --version` and `--help`. Both answer before any configuration is read, so
   they work on a broken install — which is when you most need to know which build is
   running.
-- `CLICKSCOPE_PROFILES` restored as a plugin configuration field. Because a profiles file
-  holds references rather than values, credentials named there survive an upgrade;
-  everything stored in plugin configuration is erased when a plugin is uninstalled, and
-  uninstalling is the only way to change version.
+- `CLICKSCOPE_PROFILES` restored as a plugin configuration field, for deployments with
+  more than one cluster or with credentials held in a secret manager.
 
 ### Fixed
 
