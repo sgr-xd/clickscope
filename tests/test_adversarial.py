@@ -72,3 +72,34 @@ def test_must_block(sql: str) -> None:
     decision = ENGINE.evaluate(sql)
     assert not decision.allowed, f"policy allowed a dangerous statement: {sql!r}"
     assert decision.violations, "a rejection must explain itself"
+
+
+# Regression cases found by probing a live server, not by reading the code.
+FOUND_BY_PROBING = [
+    # A trailing FORMAT clause must be last, so an appended LIMIT lands after it and
+    # the statement stops parsing.
+    "SELECT tenant_id FROM events FORMAT JSON",
+    "SELECT tenant_id FROM events FORMAT TabSeparated;",
+    "SELECT tenant_id FROM events format csv",
+]
+
+
+@pytest.mark.parametrize("sql", FOUND_BY_PROBING, ids=lambda s: s[:44])
+def test_found_by_probing(sql: str) -> None:
+    decision = ENGINE.evaluate(sql)
+    assert not decision.allowed, f"policy allowed: {sql!r}"
+
+
+FORMAT_FALSE_POSITIVES = [
+    # `format` as a function or column must not trip the FORMAT-clause rule.
+    "SELECT formatReadableSize(bytes) FROM system.parts",
+    "SELECT formatDateTime(timestamp, '%F') FROM events",
+    "SELECT format FROM some_table",
+    "SELECT format, count() FROM events GROUP BY format",
+]
+
+
+@pytest.mark.parametrize("sql", FORMAT_FALSE_POSITIVES, ids=lambda s: s[:44])
+def test_format_rule_does_not_overreach(sql: str) -> None:
+    decision = ENGINE.evaluate(sql)
+    assert decision.allowed, f"policy wrongly blocked: {sql!r} -> {decision.violations}"

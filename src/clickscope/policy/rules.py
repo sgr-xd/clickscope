@@ -110,6 +110,9 @@ _BLOCKED_SYSTEM_TABLE_RE = re.compile(
     r"\bsystem\s*\.\s*(" + "|".join(_BLOCKED_SYSTEM_TABLES) + r")\b", re.IGNORECASE
 )
 _INTO_OUTFILE_RE = re.compile(r"\bINTO\s+OUTFILE\b", re.IGNORECASE)
+# A trailing `FORMAT <name>` clause, which must be the last thing in a statement.
+# Anchored so it cannot match a column called `format` or a `format*` function.
+_FORMAT_CLAUSE = re.compile(r"\bFORMAT\s+[A-Za-z_][A-Za-z0-9_]*\s*;?\s*$", re.IGNORECASE)
 _SETTINGS_RE = re.compile(r"\bSETTINGS\b", re.IGNORECASE)
 _HEAD_RE = re.compile(r"\s*([A-Za-z_]+)")
 
@@ -167,6 +170,14 @@ def check(sql: str) -> list[str]:
 
     if _INTO_OUTFILE_RE.search(masked):
         violations.append("INTO OUTFILE is not allowed")
+
+    if _FORMAT_CLAUSE.search(masked):
+        # FORMAT must be the final clause, so an appended LIMIT lands after it and
+        # the statement stops parsing. It is also pointless here: the wire format is
+        # the driver's business and the tool returns structured JSON regardless.
+        violations.append(
+            "trailing FORMAT clause is not allowed; results are returned as JSON"
+        )
 
     if _SETTINGS_RE.search(masked):
         # An inline SETTINGS clause could otherwise raise max_rows_to_read past the

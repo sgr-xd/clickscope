@@ -59,18 +59,31 @@ def register(mcp: MCPServer, registry: ClusterRegistry, audit: AuditLog) -> None
         if err:
             return err
 
+        # EXPLAIN SYNTAX parses but does not resolve names: it happily accepts a
+        # column that does not exist, so on its own it would call an unrunnable query
+        # valid. EXPLAIN PLAN builds the query plan, which requires every name to
+        # resolve, and still reads no data.
         try:
-            result = handle.connection.execute(f"EXPLAIN SYNTAX {decision.sql}")
+            handle.connection.execute(f"EXPLAIN PLAN {decision.sql}")
         except QueryError as exc:
             return {"valid": False, "cluster": handle.name, "error": str(exc)}
 
-        normalized = "\n".join(str(row[0]) for row in result.rows)
-        return {
+        normalized = None
+        try:
+            syntax = handle.connection.execute(f"EXPLAIN SYNTAX {decision.sql}")
+            normalized = "\n".join(str(row[0]) for row in syntax.rows)
+        except QueryError:
+            # The query is valid; only the pretty-printed form is unavailable.
+            pass
+
+        payload = {
             "valid": True,
             "cluster": handle.name,
-            "normalized_sql": normalized,
-            "note": "syntax and name resolution passed; no data was read",
+            "note": "syntax, names and plan all resolved; no data was read",
         }
+        if normalized:
+            payload["normalized_sql"] = normalized
+        return payload
 
     @mcp.tool(annotations=READ_ONLY)
     def estimate_query_cost(sql: str, cluster: str | None = None) -> dict[str, Any]:
