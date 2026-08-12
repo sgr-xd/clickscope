@@ -32,8 +32,10 @@ Claude Code then asks for four things:
 
 Port and TLS come from whatever you put in Server, so there is nothing else to set.
 
-This also installs the `clickhouse-query-craft` skill, which teaches the
-explore → estimate → run discipline the tools are built around.
+This also installs two skills: `clickhouse-query-craft`, which teaches the
+explore → estimate → run discipline the tools are built around, and
+`clickhouse-cluster-health`, a one-shot sweep of replication, disks, parts, merges,
+mutations and errors that reports whether the cluster is healthy right now.
 
 ### As a standalone MCP server
 
