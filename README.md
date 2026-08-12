@@ -21,9 +21,16 @@ Works with any ClickHouse: self-hosted, clustered, local, or Cloud.
 
 While the repository is private, use a local checkout instead — `/plugin marketplace add /path/to/clickscope` — or the standalone route below.
 
-Claude Code then asks for host, port, user, password, database and TLS. The password is
-masked and goes to your operating system's secure storage — keychain on macOS, the
-credential store on Windows — never to a settings file. Nothing else to configure.
+Claude Code then asks for four things:
+
+| Field | Example |
+|---|---|
+| **Server** | `clickhouse.internal`, `host:port`, or `https://abc.clickhouse.cloud` |
+| **Username** | `readonly_user` |
+| **Password** | masked; goes to your operating system's secure storage — keychain on macOS, the credential store on Windows — never to a settings file |
+| **Database** | `my_db` |
+
+Port and TLS come from whatever you put in Server, so there is nothing else to set.
 
 This also installs the `clickhouse-query-craft` skill, which teaches the
 explore → estimate → run discipline the tools are built around.
@@ -47,7 +54,8 @@ Works with any MCP client, not only Claude Code — point it at
 ```bash
 git clone https://github.com/sgr-xd/clickscope && cd clickscope
 uv venv && uv pip install -e ".[dev]"
-pytest -m "not integration"      # 134 tests, no database needed
+pytest -m "not integration"      # unit tests, no database needed
+pytest                           # adds live tests against a real server
 ```
 
 ## Configure
