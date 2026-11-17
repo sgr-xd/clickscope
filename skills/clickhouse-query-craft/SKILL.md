@@ -22,7 +22,9 @@ to prevent.
 2. **`estimate_query_cost`** — reports parts, rows and marks the query would read, and what
    share of the table that is. Nothing is read to produce this.
 3. If the verdict is **`full_scan`** or **`heavy`**, fix the query (below) and estimate
-   again.
+   again. If **`cap_check.status`** is `near_cap` or `over_cap`, the query will likely hit
+   the per-server read cap: split the time range into `suggested_windows` windows, or
+   drop raw-text columns (`raw_log`) the answer does not need.
 4. **`run_select_query`** once the verdict is `selective` — or once you have accepted that a
    scan is genuinely what you need.
 

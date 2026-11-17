@@ -7,6 +7,30 @@ documentation and skills — the plugin cache is keyed by version, so an unchang
 version means installed copies silently keep the previous build. See *Releasing* in the
 README.
 
+## [0.2.1]
+
+### Fixed
+
+- `estimate_query_cost` on a sharded cluster: EXPLAIN ESTIMATE only sees the shard it
+  runs on, so a query on a Distributed table was estimated at about half of what it read.
+  `rows` stays the one-shard figure; `rows_all_shards` and `total_rows_to_read` now scale
+  it by the shard count from `system.clusters`, matching the `rows_read` a run reports.
+- A selective query was reported as verdict `unknown`: its share of the table rounds to
+  0.0, which was treated as missing. It is now `selective` ("under 0.01%").
+- An estimate that reads no table data (`trivial`, e.g. a system-table query) now carries
+  `total_rows_to_read: 0` and is audited, so a gate that requires a prior estimate no
+  longer locks such queries out.
+
+### Added
+
+- `cap_check` in `estimate_query_cost`: estimated rows and uncompressed bytes per server
+  against `max_rows_to_read` and `max_bytes_to_read`, which ClickHouse checks on each
+  server. Bytes are the rows times the average width of the columns the query names;
+  a JSON path such as `metadata.status` is listed under `not_counted` rather than charged
+  at the whole column's size. At half the cap the status is `near_cap`, with a suggested
+  number of time windows: raw text for a busy log can run about twice the table average,
+  and a query estimated at 54% of the cap this way failed at the cap.
+
 ## [0.2.0]
 
 ### Added
