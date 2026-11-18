@@ -7,6 +7,13 @@ documentation and skills — the plugin cache is keyed by version, so an unchang
 version means installed copies silently keep the previous build. See *Releasing* in the
 README.
 
+## [Unreleased]
+
+### Added
+
+- Contributing guide, code of conduct, security policy, issue and pull-request templates,
+  CODEOWNERS and Dependabot. CI runs lint and the unit tests on Python 3.10 to 3.12.
+
 ## [0.2.1]
 
 ### Fixed
